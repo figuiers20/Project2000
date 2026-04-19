@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}2000 Hours · Dashboard{% endblock %}
+{% block head %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+{% block content %}
+<section class="summary-grid">
+    <div class="card card--hero">
+        <div class="card__label">Decade progress</div>
+        <div class="card__value">
+            {{ "%.1f"|format(summary.actual_total_hours) }}
+            <span class="card__unit">/ {{ summary.goal_hours }} hrs</span>
+        </div>
+        <div class="progress">
+            <div class="progress__bar" style="width: {{ summary.pct_complete if summary.pct_complete <= 100 else 100 }}%;"></div>
+        </div>
+        <div class="card__sub">{{ summary.pct_complete }}% complete · {{ summary.activity_count }} activities logged</div>
+    </div>
+
+    <div class="card {% if summary.delta_decade_hours >= 0 %}card--good{% else %}card--bad{% endif %}">
+        <div class="card__label">Decade pace</div>
+        <div class="card__value">
+            {% if summary.delta_decade_hours >= 0 %}+{% endif %}{{ "%.1f"|format(summary.delta_decade_hours) }} <span class="card__unit">hrs</span>
+        </div>
+        <div class="card__sub">
+            vs target of {{ "%.1f"|format(summary.target_total_hours) }} hrs by {{ summary.today }}
+        </div>
+    </div>
+
+    <div class="card {% if summary.delta_ytd_hours >= 0 %}card--good{% else %}card--bad{% endif %}">
+        <div class="card__label">Year-to-date pace</div>
+        <div class="card__value">
+            {% if summary.delta_ytd_hours >= 0 %}+{% endif %}{{ "%.1f"|format(summary.delta_ytd_hours) }} <span class="card__unit">hrs</span>
+        </div>
+        <div class="card__sub">
+            {{ "%.1f"|format(summary.ytd_actual_hours) }} actual vs {{ "%.1f"|format(summary.ytd_target_hours) }} target
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card__label">Projected decade total</div>
+        <div class="card__value">
+            {{ "%.0f"|format(summary.projected_decade_total_hours) }} <span class="card__unit">hrs</span>
+        </div>
+        <div class="card__sub">
+            at current pace ({{ "%.2f"|format(summary.daily_target_hours) }} hrs/day target)
+        </div>
+    </div>
+</section>
+
+<section class="chart-section">
+    <div class="chart-header">
+        <h2 class="chart-title">Cumulative hours</h2>
+        <div class="toggle-group" role="tablist">
+            <button class="toggle-btn is-active" data-view="decade" type="button">Decade to date</button>
+            <button class="toggle-btn" data-view="ytd" type="button">Year to date</button>
+        </div>
+    </div>
+    <div id="chart" class="chart"></div>
+    <p class="fine-print">Last refreshed: {{ last_fetched }}</p>
+</section>
+
+{% if summary.sport_breakdown %}
+<section class="breakdown">
+    <h2>Sport breakdown</h2>
+    <table class="breakdown-table">
+        <thead><tr><th>Sport</th><th class="num">Hours</th><th class="num">Share</th></tr></thead>
+        <tbody>
+            {% set total = summary.actual_total_hours or 1 %}
+            {% for sport, hours in summary.sport_breakdown.items() %}
+            <tr>
+                <td>{{ sport }}</td>
+                <td class="num">{{ "%.1f"|format(hours) }}</td>
+                <td class="num">{{ "%.1f"|format(100 * hours / total) }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<script id="chart-data" type="application/json">{{ chart_data_json|safe }}</script>
+<script>
+(function () {
+    const chartData = JSON.parse(document.getElementById('chart-data').textContent);
+    const chartEl = document.getElementById('chart');
+
+    function traces(view) {
+        const d = chartData[view];
+        return [
+            {
+                x: d.dates,
+                y: d.trend,
+                name: 'Target pace',
+                mode: 'lines',
+                line: { color: '#9aa4b2', width: 2, dash: 'dash' },
+                hovertemplate: '%{x}<br>Target: %{y:.1f} hrs<extra></extra>',
+            },
+            {
+                x: d.dates,
+                y: d.actual,
+                name: 'Actual cumulative',
+                mode: 'lines',
+                line: { color: '#fc4c02', width: 3 },
+                fill: 'tozeroy',
+                fillcolor: 'rgba(252, 76, 2, 0.08)',
+                hovertemplate: '%{x}<br>Actual: %{y:.1f} hrs<extra></extra>',
+                connectgaps: false,
+            },
+        ];
+    }
+
+    function layout(view) {
+        const d = chartData[view];
+        const title = view === 'decade' ? 'Decade to date (2025–2034)' : ('Year to date · ' + d.year);
+        return {
+            title: { text: title, font: { size: 16 } },
+            margin: { l: 60, r: 20, t: 50, b: 50 },
+            xaxis: {
+                title: 'Date',
+                type: 'date',
+            },
+            yaxis: {
+                title: 'Cumulative hours',
+                rangemode: 'tozero',
+            },
+            shapes: [
+                {
+                    type: 'line',
+                    x0: d.today, x1: d.today,
+                    yref: 'paper', y0: 0, y1: 1,
+                    line: { color: '#1f2937', width: 1, dash: 'dot' },
+                },
+            ],
+            annotations: [
+                {
+                    x: d.today, yref: 'paper', y: 1.02,
+                    text: 'Today',
+                    showarrow: false,
+                    font: { color: '#1f2937', size: 11 },
+                    xanchor: 'left',
+                },
+            ],
+            hovermode: 'x unified',
+            legend: { orientation: 'h', y: -0.18 },
+            paper_bgcolor: 'white',
+            plot_bgcolor: '#fbfbfc',
+        };
+    }
+
+    function render(view) {
+        Plotly.react(chartEl, traces(view), layout(view), { responsive: true, displaylogo: false });
+    }
+
+    // Initial render
+    render('decade');
+
+    document.querySelectorAll('.toggle-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.toggle-btn').forEach((b) => b.classList.remove('is-active'));
+            btn.classList.add('is-active');
+            render(btn.dataset.view);
+        });
+    });
+})();
+</script>
+{% endblock %}
