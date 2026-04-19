@@ -1,9 +1,0 @@
-{% extends "base.html" %}
-{% block title %}2000 Hours · Error{% endblock %}
-{% block content %}
-<section class="error-box">
-    <h1>Something went wrong</h1>
-    <p>{{ message }}</p>
-    <a href="{{ url_for('dashboard') }}" class="btn">Try again</a>
-</section>
-{% endblock %}
